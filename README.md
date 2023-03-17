@@ -11,7 +11,7 @@ with  `pip install tkinterdnd2`.
 
 ## install
 
-`python -m pip install tkinterdnd2`
+`python -m pip install tkinterdnd2-osxarm64`
 
 ## usage
 
