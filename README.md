@@ -7,7 +7,7 @@ This fork replaced macOS x86_64 dylib with arm64 dylib. if want to use tkinterdn
 `pip install tkinterdnd2-universal` for compatibility on both x64 and arm64 Mac machine
 
 this repo forked and edited to be published to pypi so one could simply install this package
-with  `pip install tkinterdnd2`.
+with  `pip install tkinterdnd2-osxarm64`.
 
 ## install
 
