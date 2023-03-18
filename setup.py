@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="tkinterdnd2-osxarm64",
-    version="0.5.0",
+    version="1.1.0",
     author="petasis\\pmgagne\\eliav2\\blacklein",
     description="TkinterDnD2 is a python wrapper for George Petasis'' tkDnD Tk extension version 2",
     long_description=long_description,

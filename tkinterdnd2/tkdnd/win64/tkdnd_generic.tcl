@@ -42,6 +42,7 @@ namespace eval generic {
   variable _codelist {}
   variable _actionlist {}
   variable _pressedkeys {}
+  variable _pressedmods {}
   variable _action {}
   variable _common_drag_source_types {}
   variable _common_drop_target_types {}
@@ -54,8 +55,13 @@ namespace eval generic {
   variable _tkdnd2platform
   variable _platform2tkdnd
 
-  proc debug {msg} {
-    puts $msg
+  variable _integer_test entier
+  if {[catch {string is entier 1234}]} {
+    set _integer_test integer
+  }
+
+  proc debug { msg } {
+    tkdnd::debug $msg
   };# debug
 
   proc initialise { } {
@@ -64,7 +70,11 @@ namespace eval generic {
   proc initialise_platform_to_tkdnd_types { types } {
     variable _platform2tkdnd
     variable _tkdnd2platform
-    set _platform2tkdnd [dict create {*}$types]
+    # set _platform2tkdnd [dict create {*}$types] ;# {*} not available in 8.4
+    set _platform2tkdnd [dict create]
+    foreach {p t} $types {
+      dict set _platform2tkdnd $p $t
+    }
     set _tkdnd2platform [dict create]
     foreach type [dict keys $_platform2tkdnd] {
       dict lappend _tkdnd2platform [dict get $_platform2tkdnd $type] $type
@@ -73,10 +83,34 @@ namespace eval generic {
 
   proc initialise_tkdnd_to_platform_types { types } {
     variable _tkdnd2platform
-    set _tkdnd2platform [dict create {*}$types]
+    # set _tkdnd2platform [dict create {*}$types] ;# {*} not available in 8.4
+    set _tkdnd2platform [dict create]
+    foreach {t p} $types {
+      dict set _tkdnd2platform $t $p
+    }
   };# initialise_tkdnd_to_platform_types
 
 };# namespace generic
+
+# ----------------------------------------------------------------------------
+#  Command generic::SetPressedKeys
+# ----------------------------------------------------------------------------
+proc generic::SetPressedKeys { pressedkeys } {
+  variable _pressedkeys
+  variable _pressedmods
+  variable _integer_test
+  set keys {}
+  set mods {}
+  foreach {b} $pressedkeys {
+    if {[string is $_integer_test -strict $b]} {
+      lappend keys $b
+    } else {
+      lappend mods $b
+    }
+  }
+  set _pressedkeys $keys
+  set _pressedmods $mods
+};# generic::SetPressedKeys
 
 # ----------------------------------------------------------------------------
 #  Command generic::HandleEnter
@@ -84,7 +118,6 @@ namespace eval generic {
 proc generic::HandleEnter { drop_target drag_source typelist codelist
                             actionlist pressedkeys } {
   variable _typelist;                 set _typelist    $typelist
-  variable _pressedkeys;              set _pressedkeys $pressedkeys
   variable _action;                   set _action      refuse_drop
   variable _common_drag_source_types; set _common_drag_source_types {}
   variable _common_drop_target_types; set _common_drop_target_types {}
@@ -96,11 +129,12 @@ proc generic::HandleEnter { drop_target drag_source typelist codelist
 
   variable _last_mouse_root_x;        set _last_mouse_root_x 0
   variable _last_mouse_root_y;        set _last_mouse_root_y 0
-  # debug "\n==============================================================="
-  # debug "generic::HandleEnter: drop_target=$drop_target,\
-  #        drag_source=$drag_source,\
-  #        typelist=$typelist"
-  # debug "generic::HandleEnter: ACTION: default"
+  SetPressedKeys $pressedkeys
+  #DBG debug "\n==============================================================="
+  #DBG debug "generic::HandleEnter: drop_target=$drop_target,\
+  #DBG        drag_source=$drag_source,\
+  #DBG        typelist=$typelist"
+  #DBG debug "generic::HandleEnter: ACTION: default"
   return default
 };# generic::HandleEnter
 
@@ -108,12 +142,13 @@ proc generic::HandleEnter { drop_target drag_source typelist codelist
 #  Command generic::HandlePosition
 # ----------------------------------------------------------------------------
 proc generic::HandlePosition { drop_target drag_source pressedkeys
-                               rootX rootY { time 0 } } {
+                               rootX rootY { action {} } { time 0 } } {
   variable _types
   variable _typelist
   variable _codelist
   variable _actionlist
   variable _pressedkeys
+  variable _pressedmods
   variable _action
   variable _common_drag_source_types
   variable _common_drop_target_types
@@ -123,22 +158,22 @@ proc generic::HandlePosition { drop_target drag_source pressedkeys
   variable _last_mouse_root_x;        set _last_mouse_root_x $rootX
   variable _last_mouse_root_y;        set _last_mouse_root_y $rootY
 
-  # debug "generic::HandlePosition: drop_target=$drop_target,\
-  #            _drop_target=$_drop_target, rootX=$rootX, rootY=$rootY"
+  #DBG debug "generic::HandlePosition: drop_target=$drop_target,\
+  #DBG            _drop_target=$_drop_target, rootX=$rootX, rootY=$rootY"
 
-  if {![info exists _drag_source] && ![string length $_drag_source]} {
-    # debug "generic::HandlePosition: no or empty _drag_source:\
-    #               return refuse_drop"
+  if {![info exists _drag_source] || ![string length $_drag_source]} {
+    #DBG debug "generic::HandlePosition: no or empty _drag_source:\
+    #DBG               return refuse_drop"
     return refuse_drop
   }
 
   if {$drag_source ne "" && $drag_source ne $_drag_source} {
-    debug "generic position event from unexpected source: $_drag_source\
-           != $drag_source"
+    #DBG debug "generic position event from unexpected source: $_drag_source\
+    #DBG        != $drag_source"
     return refuse_drop
   }
 
-  set _pressedkeys $pressedkeys
+  SetPressedKeys $pressedkeys
 
   ## Does the new drop target support any of our new types?
   # foreach {common_drag_source_types common_drop_target_types} \
@@ -147,20 +182,24 @@ proc generic::HandlePosition { drop_target drag_source pressedkeys
           [FindWindowWithCommonTypes $drop_target $_typelist] {break}
   set data [GetDroppedData $time]
 
-  # debug "\t($_drop_target) -> ($drop_target)"
+  #DBG debug "\t($_drop_target) -> ($drop_target)"
   if {$drop_target != $_drop_target} {
     if {[string length $_drop_target]} {
       ## Call the <<DropLeave>> event.
-      # debug "\t<<DropLeave>> on $_drop_target"
+      #DBG debug "\t<<DropLeave>> on $_drop_target"
       set cmd [bind $_drop_target <<DropLeave>>]
       if {[string length $cmd]} {
-        set cmd [string map [list %W $_drop_target %X $rootX %Y $rootY \
+        set widgetX 0; set widgetY 0
+        catch {set widgetX [expr {$rootX - [winfo rootx $_drop_target]}]}
+        catch {set widgetY [expr {$rootY - [winfo rooty $_drop_target]}]}
+        set cmd [string map [list %W [list $_drop_target] \
+          %X $rootX %Y $rootY %x $widgetX %y $widgetY \
           %CST \{$_common_drag_source_types\} \
           %CTT \{$_common_drop_target_types\} \
           %CPT \{[lindex [platform_independent_type [lindex $_common_drag_source_types 0]] 0]\} \
           %ST  \{$_typelist\}    %TT \{$_types\} \
           %A   \{$_action\}      %a \{$_actionlist\} \
-          %b   \{$_pressedkeys\} %m \{$_pressedkeys\} \
+          %b   \{$_pressedkeys\} %m \{$_pressedmods\} \
           %D   \{\}              %e <<DropLeave>> \
           %L   \{$_typelist\}    %% % \
           %t   \{$_typelist\}    %T  \{[lindex $_common_drag_source_types 0]\} \
@@ -173,21 +212,28 @@ proc generic::HandlePosition { drop_target drag_source pressedkeys
     set _action      refuse_drop
 
     if {[llength $common_drag_source_types]} {
-      set _action [lindex $_actionlist 0]
+      switch -exact -- $action {
+        default - {} { set _action [lindex $_actionlist 0] }
+        default      { set _action $action }
+      }
       set _common_drag_source_types $common_drag_source_types
       set _common_drop_target_types $common_drop_target_types
       ## Drop target supports at least one type. Send a <<DropEnter>>.
-      # puts "<<DropEnter>> -> $drop_target"
+      #DBG debug "<<DropEnter>> -> $drop_target"
       set cmd [bind $drop_target <<DropEnter>>]
       if {[string length $cmd]} {
+        set widgetX 0; set widgetY 0
+        catch {set widgetX [expr {$rootX - [winfo rootx $drop_target]}]}
+        catch {set widgetY [expr {$rootY - [winfo rooty $drop_target]}]}
         focus $drop_target
-        set cmd [string map [list %W $drop_target %X $rootX %Y $rootY \
+        set cmd [string map [list %W [list $drop_target] \
+          %X $rootX %Y $rootY %x $widgetX %y $widgetY \
           %CST \{$_common_drag_source_types\} \
           %CTT \{$_common_drop_target_types\} \
           %CPT \{[lindex [platform_independent_type [lindex $_common_drag_source_types 0]] 0]\} \
           %ST  \{$_typelist\}    %TT \{$_types\} \
           %A   $_action          %a  \{$_actionlist\} \
-          %b   \{$_pressedkeys\} %m  \{$_pressedkeys\} \
+          %b   \{$_pressedkeys\} %m  \{$_pressedmods\} \
           %D   [list $data]      %e  <<DropEnter>> \
           %L   \{$_typelist\}    %%  % \
           %t   \{$_typelist\}    %T  \{[lindex $_common_drag_source_types 0]\} \
@@ -210,13 +256,21 @@ proc generic::HandlePosition { drop_target drag_source pressedkeys
     ## Drop target supports at least one type. Send a <<DropPosition>>.
     set cmd [bind $drop_target <<DropPosition>>]
     if {[string length $cmd]} {
-      set cmd [string map [list %W $drop_target %X $rootX %Y $rootY \
+      switch -exact -- $action {
+        default - {} { set _action [lindex $_actionlist 0] }
+        default      { set _action $action }
+      }
+      set widgetX 0; set widgetY 0
+      catch {set widgetX [expr {$rootX - [winfo rootx $drop_target]}]}
+      catch {set widgetY [expr {$rootY - [winfo rooty $drop_target]}]}
+      set cmd [string map [list %W [list $drop_target] \
+        %X $rootX %Y $rootY %x $widgetX %y $widgetY \
         %CST \{$_common_drag_source_types\} \
         %CTT \{$_common_drop_target_types\} \
         %CPT \{[lindex [platform_independent_type [lindex $_common_drag_source_types 0]] 0]\} \
         %ST  \{$_typelist\}    %TT \{$_types\} \
         %A   $_action          %a  \{$_actionlist\} \
-        %b   \{$_pressedkeys\} %m  \{$_pressedkeys\} \
+        %b   \{$_pressedkeys\} %m  \{$_pressedmods\} \
         %D   [list $data]      %e  <<DropPosition>> \
         %L   \{$_typelist\}    %%  % \
         %t   \{$_typelist\}    %T  \{[lindex $_common_drag_source_types 0]\} \
@@ -226,7 +280,7 @@ proc generic::HandlePosition { drop_target drag_source pressedkeys
     }
   }
   # Return values: copy, move, link, ask, private, refuse_drop, default
-  # debug "generic::HandlePosition: ACTION: $_action"
+  #DBG debug "generic::HandlePosition: ACTION: $_action"
   switch -exact -- $_action {
     copy - move - link - ask - private - refuse_drop - default {}
     default {set _action copy}
@@ -243,6 +297,7 @@ proc generic::HandleLeave { } {
   variable _codelist
   variable _actionlist
   variable _pressedkeys
+  variable _pressedmods
   variable _action
   variable _common_drag_source_types
   variable _common_drop_target_types
@@ -251,18 +306,21 @@ proc generic::HandleLeave { } {
   variable _last_mouse_root_x
   variable _last_mouse_root_y
   if {![info exists _drop_target]} {set _drop_target {}}
-  # debug "generic::HandleLeave: _drop_target=$_drop_target"
+  #DBG debug "generic::HandleLeave: _drop_target=$_drop_target"
   if {[info exists _drop_target] && [string length $_drop_target]} {
     set cmd [bind $_drop_target <<DropLeave>>]
     if {[string length $cmd]} {
-      set cmd [string map [list %W $_drop_target \
-        %X $_last_mouse_root_x %Y $_last_mouse_root_y \
+      set widgetX 0; set widgetY 0
+      catch {set widgetX [expr {$_last_mouse_root_x - [winfo rootx $_drop_target]}]}
+      catch {set widgetY [expr {$_last_mouse_root_y - [winfo rooty $_drop_target]}]}
+      set cmd [string map [list %W [list $_drop_target] \
+        %X $_last_mouse_root_x %Y $_last_mouse_root_y %x $widgetX %y $widgetY \
         %CST \{$_common_drag_source_types\} \
         %CTT \{$_common_drop_target_types\} \
         %CPT \{[lindex [platform_independent_type [lindex $_common_drag_source_types 0]] 0]\} \
         %ST  \{$_typelist\}    %TT \{$_types\} \
         %A   \{$_action\}      %a  \{$_actionlist\} \
-        %b   \{$_pressedkeys\} %m  \{$_pressedkeys\} \
+        %b   \{$_pressedkeys\} %m  \{$_pressedmods\} \
         %D   \{\}              %e  <<DropLeave>> \
         %L   \{$_typelist\}    %%  % \
         %t   \{$_typelist\}    %T  \{[lindex $_common_drag_source_types 0]\} \
@@ -271,7 +329,7 @@ proc generic::HandleLeave { } {
       set _action [uplevel \#0 $cmd]
     }
   }
-  foreach var {_types _typelist _actionlist _pressedkeys _action
+  foreach var {_types _typelist _actionlist _pressedkeys _pressedmods _action
                _common_drag_source_types _common_drop_target_types
                _drag_source _drop_target} {
     set $var {}
@@ -287,6 +345,7 @@ proc generic::HandleDrop {drop_target drag_source pressedkeys rootX rootY time }
   variable _codelist
   variable _actionlist
   variable _pressedkeys
+  variable _pressedmods
   variable _action
   variable _common_drag_source_types
   variable _common_drop_target_types
@@ -297,9 +356,9 @@ proc generic::HandleDrop {drop_target drag_source pressedkeys rootX rootY time }
   variable _last_mouse_root_x;        set _last_mouse_root_x $rootX
   variable _last_mouse_root_y;        set _last_mouse_root_y $rootY
 
-  set _pressedkeys $pressedkeys
+  SetPressedKeys $pressedkeys
 
-  # puts "generic::HandleDrop: $time"
+  #DBG debug "generic::HandleDrop: $time"
 
   if {![info exists _drag_source] && ![string length $_drag_source]} {
     return refuse_drop
@@ -315,13 +374,17 @@ proc generic::HandleDrop {drop_target drag_source pressedkeys rootX rootY time }
     set type [platform_independent_type $type]
     set cmd [bind $_drop_target <<Drop:$type>>]
     if {[string length $cmd]} {
-      set cmd [string map [list %W $_drop_target %X $rootX %Y $rootY \
+      set widgetX 0; set widgetY 0
+      catch {set widgetX [expr {$rootX - [winfo rootx $_drop_target]}]}
+      catch {set widgetY [expr {$rootY - [winfo rooty $_drop_target]}]}
+      set cmd [string map [list %W [list $_drop_target] \
+        %X $rootX %Y $rootY %x $widgetX %y $widgetY \
         %CST \{$_common_drag_source_types\} \
         %CTT \{$_common_drop_target_types\} \
         %CPT \{[lindex [platform_independent_type [lindex $_common_drag_source_types 0]] 0]\} \
         %ST  \{$_typelist\}    %TT \{$_types\} \
         %A   $_action          %a \{$_actionlist\} \
-        %b   \{$_pressedkeys\} %m \{$_pressedkeys\} \
+        %b   \{$_pressedkeys\} %m \{$_pressedmods\} \
         %D   [list $data]      %e <<Drop:$type>> \
         %L   \{$_typelist\}    %% % \
         %t   \{$_typelist\}    %T  \{[lindex $_common_drag_source_types 0]\} \
@@ -338,13 +401,17 @@ proc generic::HandleDrop {drop_target drag_source pressedkeys rootX rootY time }
   }
   set cmd [bind $_drop_target <<Drop>>]
   if {[string length $cmd]} {
-    set cmd [string map [list %W $_drop_target %X $rootX %Y $rootY \
+    set widgetX 0; set widgetY 0
+    catch {set widgetX [expr {$rootX - [winfo rootx $_drop_target]}]}
+    catch {set widgetY [expr {$rootY - [winfo rooty $_drop_target]}]}
+    set cmd [string map [list %W [list $_drop_target] \
+      %X $rootX %Y $rootY %x $widgetX %y $widgetY \
       %CST \{$_common_drag_source_types\} \
       %CTT \{$_common_drop_target_types\} \
       %CPT \{[lindex [platform_independent_type [lindex $_common_drag_source_types 0]] 0]\} \
       %ST  \{$_typelist\}    %TT \{$_types\} \
       %A   $_action          %a \{$_actionlist\} \
-      %b   \{$_pressedkeys\} %m \{$_pressedkeys\} \
+      %b   \{$_pressedkeys\} %m \{$_pressedmods\} \
       %D   [list $data]      %e <<Drop>> \
       %L   \{$_typelist\}    %% % \
       %t   \{$_typelist\}    %T  \{[lindex $_common_drag_source_types 0]\} \
@@ -365,7 +432,7 @@ proc generic::HandleDrop {drop_target drag_source pressedkeys rootX rootY time }
 # ----------------------------------------------------------------------------
 proc generic::GetWindowCommonTypes { win typelist } {
   set types [bind $win <<DropTargetTypes>>]
-  # debug ">> Accepted types: $win $_types"
+  #DBG debug ">> Accepted types: $win $_types"
   set common_drag_source_types {}
   set common_drop_target_types {}
   if {[llength $types]} {
@@ -476,15 +543,15 @@ proc generic::platform_specific_type { type } {
 }; # generic::platform_specific_type
 
 # ----------------------------------------------------------------------------
-#  Command tkdnd::platform_independent_types
+#  Command generic::platform_independent_types
 # ----------------------------------------------------------------------------
-proc ::tkdnd::platform_independent_types { types } {
+proc generic::platform_independent_types { types } {
   set new_types {}
   foreach type $types {
     set new_types [concat $new_types [platform_independent_type $type]]
   }
   return $new_types
-}; # tkdnd::platform_independent_types
+}; # generic::platform_independent_types
 
 # ----------------------------------------------------------------------------
 #  Command generic::platform_independent_type
