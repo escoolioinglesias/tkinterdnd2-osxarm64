@@ -6,12 +6,10 @@ this is fork of [tkinterdnd2](https://github.com/pmgagne/tkinterdnd2) which is a
 This fork replaced macOS x86_64 dylib with arm64 dylib. if want to use tkinterdnd2 on intel mac, please use original repo, or my edited universal repo via
 `pip install tkinterdnd2-universal` for compatibility on both x64 and arm64 Mac machine
 
-this repo forked and edited to be published to pypi so one could simply install this package
-with  `pip install tkinterdnd2-osxarm64`.
 
 ## install
 
-`python -m pip install tkinterdnd2-osxarm64`
+`pip install git+https://github.com/escoolioinglesias/tkinterdnd2-osxarm64.git`
 
 ## usage
 
